@@ -1,0 +1,7 @@
+# ignore all logs
+*.log
+# ignore data folder
+/data
+/log/
+/output/toy/
+/output/kindle/
