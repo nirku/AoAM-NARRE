@@ -1,4 +1,8 @@
 # ignore all logs
 *.log
+
+# ignore python byte-code
+*.pyc
+
 # ignore data folder
 /data
