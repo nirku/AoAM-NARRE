@@ -1,33 +1,14 @@
-def fc_layer(x, num_units, use_relu=True):
-    """
-    Create a fully-connected layer
-    :param x: input from previous layer
-    :param num_units: number of hidden units in the fully-connected layer
-    :param name: layer name
-    :param use_relu: boolean to add ReLU non-linearity (or not)
-    :return: The output array
-    """
-    in_dim = x.shape
-    print in_dim
-#     print x
-    W = tf.Variable(tf.random_uniform([in_dim[1].value, num_units], -0.1, 0.1))
-    b = tf.Variable(tf.random_uniform([num_units,], -0.1, 0.1))
-    
-    
-    layer = tf.matmul(x, W)
-    layer += b
-    if use_relu:
-        layer = tf.nn.relu(layer)
-    return layer
-
 import tensorflow as tf
 
-class NARRE_dnn(object):
+'''
+NARRE_Attention
+Improved NARRE with attention mechinisem over the feature level.
+'''
+class Multi_NARRE(object):
     def __init__(
             self, review_num_u, review_num_i, review_len_u, review_len_i, user_num, item_num, num_classes,
             user_vocab_size, item_vocab_size, n_latent, embedding_id, attention_size,
-            embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0,
-            dnn_layers_size=64, n_dnn_layers=3 ):
+            embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0):
         self.input_u = tf.placeholder(tf.int32, [None, review_num_u, review_len_u], name="input_u")
         self.input_i = tf.placeholder(tf.int32, [None, review_num_i, review_len_i], name="input_i")
         self.input_reuid = tf.placeholder(tf.int32, [None, review_num_u], name='input_reuid')
@@ -45,8 +26,14 @@ class NARRE_dnn(object):
             self.W1 = tf.Variable(
                 tf.random_uniform([user_vocab_size, embedding_size], -1.0, 1.0),
                 name="W1")
+            
             self.embedded_user = tf.nn.embedding_lookup(self.W1, self.input_u)
             self.embedded_users = tf.expand_dims(self.embedded_user, -1)
+            
+            print 'w1: ', self.W1.shape
+            print 'embedded_user: ', self.embedded_user
+            print 'embedded_users: ', self.embedded_users
+
 
 
         with tf.name_scope("item_embedding"):
@@ -55,6 +42,10 @@ class NARRE_dnn(object):
                 name="W2")
             self.embedded_item = tf.nn.embedding_lookup(self.W2, self.input_i)
             self.embedded_items = tf.expand_dims(self.embedded_item, -1)
+            
+            print 'w2: ', self.W2.shape
+            print 'embedded_item: ', self.embedded_item
+            print 'embedded_items: ', self.embedded_items
 
 
         pooled_outputs_u = []
@@ -87,10 +78,6 @@ class NARRE_dnn(object):
         
         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
 
-#         self.h_pool_u = pooled_outputs_u
-
-#         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
-
         pooled_outputs_i = []
 
         for i, filter_size in enumerate(filter_sizes):
@@ -117,11 +104,8 @@ class NARRE_dnn(object):
                     name="pool")
                 pooled_outputs_i.append(pooled)
         num_filters_total = num_filters * len(filter_sizes)
-        
-        self.h_pool_i = tf.concat(pooled_outputs_i,3)
+        self.h_pool_i = tf.concat(pooled_outputs_i, 3)
         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
-#         self.h_pool_i = pooled_outputs_i
-#         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
         
         with tf.name_scope("dropout"):
             self.h_drop_u = tf.nn.dropout(self.h_pool_flat_u, 1.0)
@@ -227,7 +211,9 @@ class NARRE_dnn(object):
                 tf.random_uniform([num_filters_total, n_latent], -0.1, 0.1), name='Wi')
             bi = tf.Variable(tf.constant(0.1, shape=[n_latent]), name="bi")
             self.i_feas = tf.matmul(self.i_feas, Wi) +self.iid+ bi
-
+            
+            print self.i_feas.shape
+            print self.u_feas.shape
        
 
         with tf.name_scope('ncf'):
@@ -237,28 +223,64 @@ class NARRE_dnn(object):
 
             self.FM=tf.nn.dropout(self.FM,self.dropout_keep_prob)
 
-#             Wmul=tf.Variable(
-#                 tf.random_uniform([n_latent, 1], -0.1, 0.1), name='wmul')
+            print self.FM.shape 
+            ##########################
+            
+            # Trainable parameters
+            FM_hidden_size = self.FM.shape[1]
+            w_omega = tf.get_variable(name="w_omega", shape=[FM_hidden_size, attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
+            b_omega = tf.get_variable(name="b_omega", shape=[attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
+            u_omega = tf.get_variable(name="u_omega", shape=[attention_size, attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
 
-#             self.mul=tf.matmul(self.FM,Wmul)
-#             self.score=tf.reduce_sum(self.mul,1,keep_dims=True)
+            with tf.name_scope('v'):
+                # Applying fully connected layer with non-linear activation to each of the B*T timestamps;
+                #  the shape of `v` is (B,T,D)*(D,A)=(B,T,A), where A=attention_size
+                v = tf.tanh(tf.tensordot(self.FM, w_omega, axes=1) + b_omega)
+
+#             # For each of the timestamps its vector of size A from `v` is reduced with `u` vector
+            vu = tf.tensordot(v, u_omega, axes=1, name='vu')  # (B,T) shape
+            alphas = tf.nn.softmax(vu, name='alphas')         # (B,T) shape
+            print alphas.shape
+#             print vu.shape
+#             print alphas.shape
+
+            # Output of (Bi-)RNN is reduced with attention vector; the result has (B,D) shape
+            self.FM = tf.math.multiply(self.FM, alphas)
             
             print self.FM.shape
             
-            ############## DNNN ##################
-            if not isinstance(dnn_layers_size, list):
-                dnn_layers_size = [dnn_layers_size for i in range(n_dnn_layers)]
             
-            
-            self.x_dnn = fc_layer(self.FM, dnn_layers_size[0], use_relu=True)
-            self.x_dnn = tf.nn.dropout(self.x_dnn, self.dropout_keep_prob)
-            for layer in dnn_layers_size[1:]:
-                self.x_dnn = fc_layer(self.x_dnn, layer, use_relu=True)
-                # Apply dropout
-#                 self.x_dnn = tf.nn.dropout(self.x_dnn, self.dropout_keep_prob)
-            self.score = fc_layer(self.x_dnn, 1, use_relu=False)
-            ############## DNNN ##################
+            ##########################
+            # First fully connected net
+#             with tf.variable_scope('hidden1'):
+#                 weights = tf.get_variable("W", [32, 16],
+#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
+#                 biases = tf.get_variable("b", [16], initializer=tf.constant_initializer(0.1))
+#                 hidden1 = tf.nn.relu(tf.matmul(self.FM, weights) + biases)
 
+#             # Second fully connected net
+#             with tf.variable_scope('hidden2'):
+#                 weights = tf.get_variable("W", [16, 16],
+#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
+#                 biases = tf.get_variable("b", [16], initializer=tf.constant_initializer(0.1))
+#                 hidden2 = tf.nn.relu(tf.matmul(hidden1, weights) + biases)
+
+#             # Linear
+#             with tf.variable_scope('softmax_linear'):
+#                 weights = tf.get_variable("W", [16, 1],
+#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
+#                 biases = tf.get_variable("b", [1], initializer=tf.constant_initializer(0.1))
+#                 self.score = tf.nn.relu(tf.matmul(hidden2, weights) + biases)
+
+        
+        
+        ###############################
+            Wmul=tf.Variable(
+                tf.random_uniform([n_latent, 1], -0.1, 0.1), name='wmul')
+
+            self.mul=tf.matmul(self.FM,Wmul)
+            self.score=tf.reduce_sum(self.mul,1,keep_dims=True)
+        ###############################
             self.uidW2 = tf.Variable(tf.constant(0.1, shape=[user_num + 2]), name="uidW2")
             self.iidW2 = tf.Variable(tf.constant(0.1, shape=[item_num + 2]), name="iidW2")
             self.u_bias = tf.gather(self.uidW2, self.input_uid)
@@ -267,8 +289,7 @@ class NARRE_dnn(object):
 
             self.bised = tf.Variable(tf.constant(0.1), name='bias')
 
-#             self.predictions = self.score + self.Feature_bias + self.bised
-            self.predictions = self.x_dnn + self.Feature_bias + self.bised
+            self.predictions = self.score + self.Feature_bias + self.bised
 
         with tf.name_scope("loss"):
             losses = tf.nn.l2_loss(tf.subtract(self.predictions, self.input_y))

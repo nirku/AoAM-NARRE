@@ -1,8 +1,16 @@
+import tensorflow as tf
+
 '''
-NARRE_Attention
-Improved NARRE with attention mechinisem over the feature level.
+NARRE
+@author:
+Chong Chen (cstchenc@163.com)
+
+@ created:
+27/8/2017
+@references:
+Chong Chen, Min Zhang, Yiqun Liu, and Shaoping Ma. 2018. Neural Attentional Rating Regression with Review-level Explanations. In WWW'18.
 '''
-class Multi_NARRE(object):
+class NARRE(object):
     def __init__(
             self, review_num_u, review_num_i, review_len_u, review_len_i, user_num, item_num, num_classes,
             user_vocab_size, item_vocab_size, n_latent, embedding_id, attention_size,
@@ -24,14 +32,8 @@ class Multi_NARRE(object):
             self.W1 = tf.Variable(
                 tf.random_uniform([user_vocab_size, embedding_size], -1.0, 1.0),
                 name="W1")
-            
             self.embedded_user = tf.nn.embedding_lookup(self.W1, self.input_u)
             self.embedded_users = tf.expand_dims(self.embedded_user, -1)
-            
-            print 'w1: ', self.W1.shape
-            print 'embedded_user: ', self.embedded_user
-            print 'embedded_users: ', self.embedded_users
-
 
 
         with tf.name_scope("item_embedding"):
@@ -40,10 +42,6 @@ class Multi_NARRE(object):
                 name="W2")
             self.embedded_item = tf.nn.embedding_lookup(self.W2, self.input_i)
             self.embedded_items = tf.expand_dims(self.embedded_item, -1)
-            
-            print 'w2: ', self.W2.shape
-            print 'embedded_item: ', self.embedded_item
-            print 'embedded_items: ', self.embedded_items
 
 
         pooled_outputs_u = []
@@ -72,8 +70,12 @@ class Multi_NARRE(object):
                     name="pool")
                 pooled_outputs_u.append(pooled)
         num_filters_total = num_filters * len(filter_sizes)
-        self.h_pool_u = tf.concat(pooled_outputs_u, 3)
+#         self.h_pool_u = tf.concat(3,pooled_outputs_u)
         
+#         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
+
+        self.h_pool_u = pooled_outputs_u
+
         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
 
         pooled_outputs_i = []
@@ -102,7 +104,10 @@ class Multi_NARRE(object):
                     name="pool")
                 pooled_outputs_i.append(pooled)
         num_filters_total = num_filters * len(filter_sizes)
-        self.h_pool_i = tf.concat(pooled_outputs_i, 3)
+        
+#         self.h_pool_i = tf.concat(3,pooled_outputs_i)
+#         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
+        self.h_pool_i = pooled_outputs_i
         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
         
         with tf.name_scope("dropout"):
@@ -209,9 +214,7 @@ class Multi_NARRE(object):
                 tf.random_uniform([num_filters_total, n_latent], -0.1, 0.1), name='Wi')
             bi = tf.Variable(tf.constant(0.1, shape=[n_latent]), name="bi")
             self.i_feas = tf.matmul(self.i_feas, Wi) +self.iid+ bi
-            
-            print self.i_feas.shape
-            print self.u_feas.shape
+
        
 
         with tf.name_scope('ncf'):
@@ -221,64 +224,12 @@ class Multi_NARRE(object):
 
             self.FM=tf.nn.dropout(self.FM,self.dropout_keep_prob)
 
-            print self.FM.shape 
-            ##########################
-            
-            # Trainable parameters
-            FM_hidden_size = self.FM.shape[1]
-            w_omega = tf.get_variable(name="w_omega", shape=[FM_hidden_size, attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
-            b_omega = tf.get_variable(name="b_omega", shape=[attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
-            u_omega = tf.get_variable(name="u_omega", shape=[attention_size, attention_size], initializer=tf.random_uniform_initializer(-0.1,0.1))
-
-            with tf.name_scope('v'):
-                # Applying fully connected layer with non-linear activation to each of the B*T timestamps;
-                #  the shape of `v` is (B,T,D)*(D,A)=(B,T,A), where A=attention_size
-                v = tf.tanh(tf.tensordot(self.FM, w_omega, axes=1) + b_omega)
-
-#             # For each of the timestamps its vector of size A from `v` is reduced with `u` vector
-            vu = tf.tensordot(v, u_omega, axes=1, name='vu')  # (B,T) shape
-            alphas = tf.nn.softmax(vu, name='alphas')         # (B,T) shape
-            print alphas.shape
-#             print vu.shape
-#             print alphas.shape
-
-            # Output of (Bi-)RNN is reduced with attention vector; the result has (B,D) shape
-            self.FM = tf.math.multiply(self.FM, alphas)
-            
-            print self.FM.shape
-            
-            
-            ##########################
-            # First fully connected net
-#             with tf.variable_scope('hidden1'):
-#                 weights = tf.get_variable("W", [32, 16],
-#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
-#                 biases = tf.get_variable("b", [16], initializer=tf.constant_initializer(0.1))
-#                 hidden1 = tf.nn.relu(tf.matmul(self.FM, weights) + biases)
-
-#             # Second fully connected net
-#             with tf.variable_scope('hidden2'):
-#                 weights = tf.get_variable("W", [16, 16],
-#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
-#                 biases = tf.get_variable("b", [16], initializer=tf.constant_initializer(0.1))
-#                 hidden2 = tf.nn.relu(tf.matmul(hidden1, weights) + biases)
-
-#             # Linear
-#             with tf.variable_scope('softmax_linear'):
-#                 weights = tf.get_variable("W", [16, 1],
-#                       initializer=tf.random_uniform_initializer(-0.1, 0.1))
-#                 biases = tf.get_variable("b", [1], initializer=tf.constant_initializer(0.1))
-#                 self.score = tf.nn.relu(tf.matmul(hidden2, weights) + biases)
-
-        
-        
-        ###############################
             Wmul=tf.Variable(
                 tf.random_uniform([n_latent, 1], -0.1, 0.1), name='wmul')
 
             self.mul=tf.matmul(self.FM,Wmul)
             self.score=tf.reduce_sum(self.mul,1,keep_dims=True)
-        ###############################
+
             self.uidW2 = tf.Variable(tf.constant(0.1, shape=[user_num + 2]), name="uidW2")
             self.iidW2 = tf.Variable(tf.constant(0.1, shape=[item_num + 2]), name="iidW2")
             self.u_bias = tf.gather(self.uidW2, self.input_uid)

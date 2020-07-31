@@ -1,3 +1,6 @@
+import tensorflow as tf
+import datetime
+
 def train_step(u_batch, i_batch, uid, iid, reuid, reiid, y_batch,batch_num):
     """
     A single training step

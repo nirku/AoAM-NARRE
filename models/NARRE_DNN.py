@@ -1,18 +1,35 @@
-'''
-NARRE
-@author:
-Chong Chen (cstchenc@163.com)
+import tensorflow as tf
 
-@ created:
-27/8/2017
-@references:
-Chong Chen, Min Zhang, Yiqun Liu, and Shaoping Ma. 2018. Neural Attentional Rating Regression with Review-level Explanations. In WWW'18.
-'''
-class NARRE(object):
+def fc_layer(x, num_units, use_relu=True):
+    """
+    Create a fully-connected layer
+    :param x: input from previous layer
+    :param num_units: number of hidden units in the fully-connected layer
+    :param name: layer name
+    :param use_relu: boolean to add ReLU non-linearity (or not)
+    :return: The output array
+    """
+    in_dim = x.shape
+    print in_dim
+#     print x
+    W = tf.Variable(tf.random_uniform([in_dim[1].value, num_units], -0.1, 0.1))
+    b = tf.Variable(tf.random_uniform([num_units,], -0.1, 0.1))
+    
+    
+    layer = tf.matmul(x, W)
+    layer += b
+    if use_relu:
+        layer = tf.nn.relu(layer)
+    return layer
+
+import tensorflow as tf
+
+class NARRE_dnn(object):
     def __init__(
             self, review_num_u, review_num_i, review_len_u, review_len_i, user_num, item_num, num_classes,
             user_vocab_size, item_vocab_size, n_latent, embedding_id, attention_size,
-            embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0):
+            embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0,
+            dnn_layers_size=64, n_dnn_layers=3 ):
         self.input_u = tf.placeholder(tf.int32, [None, review_num_u, review_len_u], name="input_u")
         self.input_i = tf.placeholder(tf.int32, [None, review_num_i, review_len_i], name="input_i")
         self.input_reuid = tf.placeholder(tf.int32, [None, review_num_u], name='input_reuid')
@@ -68,13 +85,13 @@ class NARRE(object):
                     name="pool")
                 pooled_outputs_u.append(pooled)
         num_filters_total = num_filters * len(filter_sizes)
-#         self.h_pool_u = tf.concat(3,pooled_outputs_u)
+        self.h_pool_u = tf.concat(pooled_outputs_u, 3)
         
-#         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
-
-        self.h_pool_u = pooled_outputs_u
-
         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
+
+#         self.h_pool_u = pooled_outputs_u
+
+#         self.h_pool_flat_u = tf.reshape(self.h_pool_u, [-1, review_num_u, num_filters_total])
 
         pooled_outputs_i = []
 
@@ -103,10 +120,10 @@ class NARRE(object):
                 pooled_outputs_i.append(pooled)
         num_filters_total = num_filters * len(filter_sizes)
         
-#         self.h_pool_i = tf.concat(3,pooled_outputs_i)
-#         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
-        self.h_pool_i = pooled_outputs_i
+        self.h_pool_i = tf.concat(pooled_outputs_i,3)
         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
+#         self.h_pool_i = pooled_outputs_i
+#         self.h_pool_flat_i = tf.reshape(self.h_pool_i, [-1, review_num_i, num_filters_total])
         
         with tf.name_scope("dropout"):
             self.h_drop_u = tf.nn.dropout(self.h_pool_flat_u, 1.0)
@@ -222,11 +239,27 @@ class NARRE(object):
 
             self.FM=tf.nn.dropout(self.FM,self.dropout_keep_prob)
 
-            Wmul=tf.Variable(
-                tf.random_uniform([n_latent, 1], -0.1, 0.1), name='wmul')
+#             Wmul=tf.Variable(
+#                 tf.random_uniform([n_latent, 1], -0.1, 0.1), name='wmul')
 
-            self.mul=tf.matmul(self.FM,Wmul)
-            self.score=tf.reduce_sum(self.mul,1,keep_dims=True)
+#             self.mul=tf.matmul(self.FM,Wmul)
+#             self.score=tf.reduce_sum(self.mul,1,keep_dims=True)
+            
+            print self.FM.shape
+            
+            ############## DNNN ##################
+            if not isinstance(dnn_layers_size, list):
+                dnn_layers_size = [dnn_layers_size for i in range(n_dnn_layers)]
+            
+            
+            self.x_dnn = fc_layer(self.FM, dnn_layers_size[0], use_relu=True)
+            self.x_dnn = tf.nn.dropout(self.x_dnn, self.dropout_keep_prob)
+            for layer in dnn_layers_size[1:]:
+                self.x_dnn = fc_layer(self.x_dnn, layer, use_relu=True)
+                # Apply dropout
+#                 self.x_dnn = tf.nn.dropout(self.x_dnn, self.dropout_keep_prob)
+            self.score = fc_layer(self.x_dnn, 1, use_relu=False)
+            ############## DNNN ##################
 
             self.uidW2 = tf.Variable(tf.constant(0.1, shape=[user_num + 2]), name="uidW2")
             self.iidW2 = tf.Variable(tf.constant(0.1, shape=[item_num + 2]), name="iidW2")
@@ -236,7 +269,8 @@ class NARRE(object):
 
             self.bised = tf.Variable(tf.constant(0.1), name='bias')
 
-            self.predictions = self.score + self.Feature_bias + self.bised
+#             self.predictions = self.score + self.Feature_bias + self.bised
+            self.predictions = self.x_dnn + self.Feature_bias + self.bised
 
         with tf.name_scope("loss"):
             losses = tf.nn.l2_loss(tf.subtract(self.predictions, self.input_y))

@@ -15,7 +15,7 @@ We proposed two extensions to the original NARRE model:
 2) NARRE_Attention: In the original NARRE model, the final features representation were built using simple concatenation between all features, we proposed a smarter way to combine the features using the feature-attention mechanism.
 
 
-**All models can be found in '/model' folder, and can be imported directly.
+**All models can be found in '/model' folder, and can be imported directly.**
 
 
 ## Environments
@@ -31,6 +31,8 @@ We proposed two extensions to the original NARRE model:
 
 In our experiments, we use the datasets from Amazon 5-core(https://nijianmo.github.io/amazon/index.html).
 Since GitHub has a limitation space, you must download the data and preform the preprocess stage before running the model.
+
+We have also used Word2Vec embedding of "GoogleNews-vectors-negative300" (https://code.google.com/archive/p/word2vec)
 
 ## Visualization
 
@@ -57,7 +59,7 @@ models:
 ./model/NARRE_Attention.py
 ```
 
-**An Example for running the code can be found in main.ipynb
+**An Example for running the code can be found in main.ipynb**
 
 
 
