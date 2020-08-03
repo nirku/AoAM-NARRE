@@ -30,7 +30,7 @@ We proposed two extensions to the original NARRE model:
 ## Dataset
 
 In our experiments, we use the datasets from Amazon 5-core(https://nijianmo.github.io/amazon/index.html).
-Since GitHub has a limitation space, you must download the data and preform the preprocess stage before running the model.
+Since GitHub has a limitation space, you must download the data and perform the preprocess stage before running the model.
 
 We have also used Word2Vec embedding of "GoogleNews-vectors-negative300" (https://code.google.com/archive/p/word2vec)
 

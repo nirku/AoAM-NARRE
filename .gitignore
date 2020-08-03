@@ -6,3 +6,6 @@
 
 # ignore data folder
 /data
+
+*/.ipynb_checkpoints/*.ipynb
+

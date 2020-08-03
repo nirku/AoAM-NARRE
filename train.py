@@ -1,7 +1,7 @@
 import tensorflow as tf
 import datetime
 
-def train_step(deep, u_batch, i_batch, uid, iid, reuid, reiid, y_batch,batch_num):
+def train_step(sess, deep, u_batch, i_batch, uid, iid, reuid, reiid, y_batch, batch_num, dropout_keep_prob, train_op, global_step):
     """
     A single training step
     """
@@ -25,7 +25,7 @@ def train_step(deep, u_batch, i_batch, uid, iid, reuid, reiid, y_batch,batch_num
     return loss, accuracy, mae, u_a, i_a
 
 
-def dev_step(deep, u_batch, i_batch, uid, iid, reuid, reiid, y_batch, writer=None):
+def dev_step(sess, deep, u_batch, i_batch, uid, iid, reuid, reiid, y_batch, global_step, writer=None):
     """
     Evaluates model on a dev set
 
